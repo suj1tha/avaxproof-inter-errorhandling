@@ -1,70 +1,58 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract CrowdfundedLottery {
+contract ParkingManagement {
+    uint8 public constant MAX_PARKING_SLOTS = 10;
+    uint8 public availableSlots;
     address public owner;
-    uint256 public lotteryEndTime;
-    uint256 public ticketPrice;
-    uint256 public prizePool;
-    bool public lotteryEnded;
+    mapping(address => bool) public parkedVehicles;
+    address[] public parkedVehicleAddresses;
 
-    address[] public participants;
-
-    event LotteryStarted(uint256 endTime);
-    event TicketPurchased(address indexed participant, uint256 amount);
-    event WinnerDeclared(address indexed winner, uint256 prize);
-
-    constructor(uint256 durationMinutes, uint256 _ticketPrice) {
+    constructor() {
         owner = msg.sender;
-        ticketPrice = _ticketPrice;
-        lotteryEndTime = block.timestamp + (durationMinutes * 1 minutes);
-        emit LotteryStarted(lotteryEndTime);
+        availableSlots = MAX_PARKING_SLOTS;
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Only the owner can call this function");
-        _;
+    function parkVehicle() public {
+        require(availableSlots > 0, "No available parking slots");
+        require(!parkedVehicles[msg.sender], "Vehicle already parked");
+
+        parkedVehicles[msg.sender] = true;
+        parkedVehicleAddresses.push(msg.sender);
+        availableSlots -= 1;
+        
+        assert(availableSlots >= 0);
     }
 
-    modifier onlyBeforeEnd() {
-        require(block.timestamp < lotteryEndTime, "Lottery has ended");
-        _;
+    function unparkVehicle() public {
+        require(parkedVehicles[msg.sender], "Vehicle not parked");
+
+        parkedVehicles[msg.sender] = false;
+        removeParkedVehicleAddress(msg.sender);
+        availableSlots += 1;
+        
+        assert(availableSlots <= MAX_PARKING_SLOTS);
     }
 
-    modifier onlyAfterEnd() {
-        require(block.timestamp >= lotteryEndTime, "Lottery is still ongoing");
-        _;
-    }
-
-    function buyTicket() external payable onlyBeforeEnd {
-        require(msg.value == ticketPrice, "Incorrect ticket price");
-        participants.push(msg.sender);
-        prizePool += msg.value;
-        emit TicketPurchased(msg.sender, msg.value);
-    }
-
-    function endLottery() external onlyOwner onlyAfterEnd {
-        require(!lotteryEnded, "Lottery has already ended");
-        if (participants.length == 0) {
-            revert("No participants in the lottery");
+    function emergencyClearance() public {
+        if (msg.sender != owner) {
+            revert("Only the owner can perform emergency clearance");
         }
 
-        uint256 winnerIndex = _random() % participants.length;
-        address winner = participants[winnerIndex];
-
-        prizePool = 0;
-        lotteryEnded = true;
-        (bool sent, ) = winner.call{value: address(this).balance}("");
-        assert(sent);
-
-        emit WinnerDeclared(winner, address(this).balance);
+        for (uint8 i = 0; i < parkedVehicleAddresses.length; i++) {
+            parkedVehicles[parkedVehicleAddresses[i]] = false;
+        }
+        delete parkedVehicleAddresses;
+        availableSlots = MAX_PARKING_SLOTS;
     }
 
-    function _random() private view returns (uint256) {
-        return uint256(keccak256(abi.encodePacked(block.difficulty, block.timestamp, participants.length)));
-    }
-
-    receive() external payable {
-        prizePool += msg.value;
+    function removeParkedVehicleAddress(address _address) internal {
+        for (uint8 i = 0; i < parkedVehicleAddresses.length; i++) {
+            if (parkedVehicleAddresses[i] == _address) {
+                parkedVehicleAddresses[i] = parkedVehicleAddresses[parkedVehicleAddresses.length - 1];
+                parkedVehicleAddresses.pop();
+                break;
+            }
+        }
     }
 }
