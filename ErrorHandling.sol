@@ -1,58 +1,45 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract ParkingManagement {
-    uint8 public constant MAX_PARKING_SLOTS = 10;
-    uint8 public availableSlots;
-    address public owner;
-    mapping(address => bool) public parkedVehicles;
-    address[] public parkedVehicleAddresses;
-
-    constructor() {
-        owner = msg.sender;
-        availableSlots = MAX_PARKING_SLOTS;
+contract BookLending {
+    struct Book {
+        string title;
+        uint copiesAvailable;
     }
 
-    function parkVehicle() public {
-        require(availableSlots > 0, "No available parking slots");
-        require(!parkedVehicles[msg.sender], "Vehicle already parked");
+    mapping(uint256 => Book) public books;
+    mapping(uint256 => mapping(address => uint)) public borrowerCopies;
+    uint256 public totalBooks;
 
-        parkedVehicles[msg.sender] = true;
-        parkedVehicleAddresses.push(msg.sender);
-        availableSlots -= 1;
-        
-        assert(availableSlots >= 0);
+    event BookAdded(uint256 bookId, string title, uint copies);
+    event BookBorrowed(uint256 bookId, address borrower, uint copies);
+    event BookReturned(uint256 bookId, address borrower, uint copies);
+
+    function addBook(string memory title, uint copies) public {
+        require(copies > 0, "At least one copy is required.");
+        uint256 bookId = totalBooks++;
+        books[bookId] = Book(title, copies);
+        emit BookAdded(bookId, title, copies);
     }
 
-    function unparkVehicle() public {
-        require(parkedVehicles[msg.sender], "Vehicle not parked");
+    function borrowBook(uint256 bookId, uint numCopies) public {
+        books[bookId].copiesAvailable -= numCopies;
+        borrowerCopies[bookId][msg.sender] += numCopies;
+        emit BookBorrowed(bookId, msg.sender, numCopies);
 
-        parkedVehicles[msg.sender] = false;
-        removeParkedVehicleAddress(msg.sender);
-        availableSlots += 1;
-        
-        assert(availableSlots <= MAX_PARKING_SLOTS);
+        assert(books[bookId].copiesAvailable >= 0);
     }
 
-    function emergencyClearance() public {
-        if (msg.sender != owner) {
-            revert("Only the owner can perform emergency clearance");
+    function returnBook(uint256 bookId, uint numCopies) public {
+        uint borrowedCopies = borrowerCopies[bookId][msg.sender];
+        if (borrowedCopies < numCopies) {
+            revert("Trying to return more copies than borrowed.");
         }
 
-        for (uint8 i = 0; i < parkedVehicleAddresses.length; i++) {
-            parkedVehicles[parkedVehicleAddresses[i]] = false;
-        }
-        delete parkedVehicleAddresses;
-        availableSlots = MAX_PARKING_SLOTS;
-    }
+        books[bookId].copiesAvailable += numCopies;
+        borrowerCopies[bookId][msg.sender] -= numCopies;
+        emit BookReturned(bookId, msg.sender, numCopies);
 
-    function removeParkedVehicleAddress(address _address) internal {
-        for (uint8 i = 0; i < parkedVehicleAddresses.length; i++) {
-            if (parkedVehicleAddresses[i] == _address) {
-                parkedVehicleAddresses[i] = parkedVehicleAddresses[parkedVehicleAddresses.length - 1];
-                parkedVehicleAddresses.pop();
-                break;
-            }
-        }
+        assert(borrowerCopies[bookId][msg.sender] >= 0);
     }
 }
